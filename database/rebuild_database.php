@@ -3,11 +3,15 @@
 // Skrip ini membaca file master `schema.sql` dan membangun basis data db_pkaa terbaru secara otomatis.
 // Dapat dijalankan melalui CLI: `php database/rebuild_database.php` maupun via Web Browser.
 
-$host = '127.0.0.1';
-$user = 'root';
-$pass = '';
-$dbname = 'db_pkaa';
-$charset = 'utf8mb4';
+// Load konfigurasi dari .env jika ada
+require_once __DIR__ . '/../config/database.php';
+
+$host    = env('DB_HOST', '127.0.0.1');
+$port    = env('DB_PORT', '3306');
+$user    = env('DB_USERNAME', 'root');
+$pass    = env('DB_PASSWORD', '');
+$dbname  = env('DB_DATABASE', 'db_pkaa');
+$charset = env('DB_CHARSET', 'utf8mb4');
 
 $isCli = (php_sapi_name() === 'cli');
 
