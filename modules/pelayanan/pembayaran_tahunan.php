@@ -4,25 +4,57 @@ $pageTitle = "Pembayaran PKAA Tahunan";
 $currentUser = currentUser();
 $userRole = $currentUser['role'] ?? 'OPERATOR';
 
-$selectedNopd = strtoupper(trim($_GET['nopd'] ?? $_POST['no_objek_pajak'] ?? ''));
+// Tangkap input 3 kotak NOPD [xx] [xxxx] [xx] atau input gabungan
+$nopd1 = strtoupper(trim($_GET['nopd_1'] ?? ''));
+$nopd2 = strtoupper(trim($_GET['nopd_2'] ?? ''));
+$nopd3 = strtoupper(trim($_GET['nopd_3'] ?? ''));
+
+if ($nopd1 !== '' || $nopd2 !== '' || $nopd3 !== '') {
+    $selectedNopd = trim("$nopd1 $nopd2 $nopd3");
+} else {
+    $selectedNopd = strtoupper(trim($_GET['nopd'] ?? $_POST['no_objek_pajak'] ?? ''));
+}
+
+// Normalisasi dan parsing NOPD ke dalam 3 kotak
+$cleanNopd = str_replace(['-', '_', '.'], ' ', $selectedNopd);
+$parts = preg_split('/\s+/', trim($cleanNopd));
+if (count($parts) === 3) {
+    $box1 = strtoupper($parts[0]);
+    $box2 = strtoupper($parts[1]);
+    $box3 = strtoupper($parts[2]);
+    $selectedNopd = "$box1 $box2 $box3";
+} elseif (preg_match('/^([A-Z]{2})(\d{1,4})([A-Z]{1,3})$/i', str_replace(' ', '', $selectedNopd), $m)) {
+    $box1 = strtoupper($m[1]);
+    $box2 = str_pad(strtoupper($m[2]), 4, '0', STR_PAD_LEFT);
+    $box3 = strtoupper($m[3]);
+    $selectedNopd = "$box1 $box2 $box3";
+} else {
+    $box1 = strtoupper($parts[0] ?? 'KA');
+    $box2 = strtoupper($parts[1] ?? '');
+    $box3 = strtoupper($parts[2] ?? '');
+}
+
+if ($box1 === '') {
+    $box1 = 'KA';
+}
 
 $kapal = null;
 $mesinList = [];
 $perhitungan = null;
-$pesan = '';
-$tipePesan = '';
 $suksesBayar = false;
 $noSkpdTerbit = '';
 $noSuperTerbit = '';
+$isPajakAktif = false;
+$hariTersisa = 0;
 
-// Ambil daftar seluruh NOPD untuk datalist pencarian cepat
+// Ambil daftar seluruh NOPD untuk datalist & dropdown pencarian cepat
 $allNopdList = $pdo->query("SELECT no_objek_pajak, nama_kapal, nama_pemilik, tg_akhir_pajak, status_pajak FROM kendaraan_air ORDER BY no_objek_pajak ASC")->fetchAll();
 
 // Ambil data pejabat SKPD aktif untuk penandatangan
 $pejabatSkpdList = $pdo->query("SELECT * FROM pejabat WHERE tipe_pejabat = 'SKPD' AND is_active = 1 ORDER BY id ASC")->fetchAll();
 
 // PROSES 1: Pencarian Objek Pajak berdasarkan NOPD
-if (!empty($selectedNopd)) {
+if (!empty($selectedNopd) && !empty($box2)) {
     $stmt = $pdo->prepare("
         SELECT k.*, f.nama_fungsi, f.tarif_persen, f.kategori_tarif, j.nama_jenis,
                kb.nama_kabupaten_kota, kb.ibukota
@@ -44,10 +76,18 @@ if (!empty($selectedNopd)) {
             $mesinList = $stmtM->fetchAll();
         }
 
-        // Tentukan Masa Pajak Terbaru Otomatis:
-        // Masa Pajak Awal: 1 hari setelah masa berakhir pajak sebelumnya (atau hari ini jika kosong/rusak)
+        // Tentukan status keaktifan pajak
+        $todayDate = date('Y-m-d');
         $tglAkhirLama = $kapal['tg_akhir_pajak'];
+
         if (!empty($tglAkhirLama) && $tglAkhirLama !== '0000-00-00') {
+            $todayTs = strtotime($todayDate);
+            $expTs = strtotime($tglAkhirLama);
+            if ($expTs >= $todayTs) {
+                $isPajakAktif = true;
+                $hariTersisa = (int)ceil(($expTs - $todayTs) / 86400);
+            }
+            // Masa Pajak Awal baru: 1 hari setelah masa berakhir pajak sebelumnya
             $masaAwalBaru = date('Y-m-d', strtotime('+1 day', strtotime($tglAkhirLama)));
         } else {
             $masaAwalBaru = date('Y-m-d');
@@ -55,6 +95,11 @@ if (!empty($selectedNopd)) {
 
         // Masa Pajak Akhir: 1 tahun dari masa awal baru
         $masaAkhirBaru = date('Y-m-d', strtotime('+1 year', strtotime($masaAwalBaru)));
+
+        // Notifikasi flash jika pajak masih aktif
+        if ($isPajakAktif && empty($_POST['aksi'])) {
+            setFlash('info', 'Status Pajak Masih Aktif!', "Pajak untuk kendaraan <strong>{$kapal['nama_kapal']} ($selectedNopd)</strong> MASIH AKTIF sampai dengan <strong>" . formatTanggalIndo($tglAkhirLama) . "</strong> (Tersisa <strong>$hariTersisa hari</strong> lagi).");
+        }
 
         // Hitung kewajiban pajak dengan kalkulasi resmi BPAD NTT (Pokok + Denda Keterlambatan jika ada + Opsen 66%)
         $perhitungan = kalkulasiPajakPKAA($pdo, $kapal['total_njkb'], $kapal['kode_fungsi'], $kapal['tg_akhir_pajak'], date('Y-m-d'));
@@ -176,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     </div>
     <div>
       <div class="page-title">Pembayaran Pajak Kendaraan di Atas Air (PKAA) Tahunan</div>
-      <div class="page-subtitle">Pelayanan Perpanjangan Masa Berlaku Pajak Kapal, Penetapan SUPERPKAA & SKPD Terpadu JANGKAR NTT</div>
+      <div class="page-subtitle">Pengecekan Status Masa Pajak, Penetapan SUPERPKAA & Penerbitan SKPD Terpadu JANGKAR NTT</div>
     </div>
   </div>
   <div style="display:flex; gap:8px;">
@@ -186,57 +231,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
   </div>
 </div>
 
-<!-- Datalist Autocomplete NOPD -->
-<datalist id="datalist_nopd_tahunan">
-  <?php foreach ($allNopdList as $opt): ?>
-    <option value="<?= htmlspecialchars($opt['no_objek_pajak']) ?>">
-      <?= htmlspecialchars($opt['nama_kapal']) ?> &bull; <?= htmlspecialchars($opt['nama_pemilik']) ?> [Berlaku s.d: <?= formatTanggalIndo($opt['tg_akhir_pajak'], false) ?>]
-    </option>
-  <?php endforeach; ?>
-</datalist>
-
-<!-- 1. Form Pencarian NOPD Cepat -->
+<!-- 1. Form Pencarian NOPD 3 Kotak [xx] [xxxx] [xx] -->
 <div class="panel" style="margin-bottom: 20px; border: 1.5px solid #0284c7; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.08);">
   <div class="panel-header" style="background: #f0f9ff; border-bottom: 1.5px solid #bae6fd;">
     <div class="panel-title" style="color: #0369a1; font-weight: 700;">
       <?= renderIcon('search', '', 16) ?>
-      <span>PENCARIAN KENDARAAN AIR BERDASARKAN NOPD (ENTER UNTUK CARI)</span>
+      <span>PENCARIAN NOPD KENDARAAN AIR [xx] [xxxx] [xx] (ENTER UNTUK CEK STATUS)</span>
     </div>
     <span class="badge badge-info">Daftar Ulang Tahunan</span>
   </div>
-  <div class="panel-body" style="padding: 18px 20px;">
-    <form method="GET" action="index.php" id="formCariNopd" style="display: flex; gap: 12px; align-items: flex-end;">
+  <div class="panel-body" style="padding: 20px;">
+    <form method="GET" action="index.php" id="formCariNopd" style="display: flex; flex-direction: column; gap: 14px;">
       <input type="hidden" name="page" value="pembayaran_tahunan">
+      <input type="hidden" name="nopd" id="input_nopd_gabungan" value="<?= htmlspecialchars($selectedNopd) ?>">
       
-      <div style="flex: 1;">
-        <label class="form-label" for="input_nopd_cari" style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 6px;">
-          Nomor Objek Pajak Daerah (NOPD) <span class="required">*</span>
+      <div>
+        <label class="form-label" style="font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 10px; display: block;">
+          Format Nomor Objek Pajak Daerah (NOPD) &bull; 3 Kotak Input <span class="required">*</span>
         </label>
-        <div style="position: relative;">
-          <input type="text" name="nopd" id="input_nopd_cari" list="datalist_nopd_tahunan" 
-                 class="form-control" style="font-size: 16px; font-weight: 700; letter-spacing: 1px; padding: 10px 14px; text-transform: uppercase;"
-                 placeholder="Ketik NOPD (contoh: KA 0001 MB) lalu tekan ENTER..." 
-                 value="<?= htmlspecialchars($selectedNopd) ?>" required autofocus>
-          <span style="position: absolute; right: 12px; top: 11px; font-size: 11px; color: #64748b; font-weight: 600;">
-            Tekan [ENTER]
-          </span>
+        
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <!-- Kotak 1: xx (2 Karakter Jenis) -->
+          <div style="text-align: center;">
+            <input type="text" name="nopd_1" id="input_nopd_1" maxlength="2"
+                   class="form-control" style="width: 78px; height: 50px; font-size: 20px; font-weight: 800; font-family: 'Consolas', 'Courier New', monospace; text-align: center; text-transform: uppercase; letter-spacing: 2px;"
+                   placeholder="KA" value="<?= htmlspecialchars($box1) ?>" required>
+            <span style="font-size: 11px; color: #64748b; font-weight: 700; display: block; margin-top: 4px;">xx (Jenis)</span>
+          </div>
+
+          <span style="font-size: 24px; font-weight: 800; color: #94a3b8; padding-bottom: 18px;">&mdash;</span>
+
+          <!-- Kotak 2: xxxx (4 Digit Angka Nomor Urut) -->
+          <div style="text-align: center;">
+            <input type="text" name="nopd_2" id="input_nopd_2" maxlength="4"
+                   class="form-control" style="width: 130px; height: 50px; font-size: 20px; font-weight: 800; font-family: 'Consolas', 'Courier New', monospace; text-align: center; text-transform: uppercase; letter-spacing: 2px;"
+                   placeholder="0001" value="<?= htmlspecialchars($box2) ?>" required autofocus>
+            <span style="font-size: 11px; color: #64748b; font-weight: 700; display: block; margin-top: 4px;">xxxx (No. Urut)</span>
+          </div>
+
+          <span style="font-size: 24px; font-weight: 800; color: #94a3b8; padding-bottom: 18px;">&mdash;</span>
+
+          <!-- Kotak 3: xx (2 Karakter Kode Wilayah Kab/Kota) -->
+          <div style="text-align: center;">
+            <input type="text" name="nopd_3" id="input_nopd_3" maxlength="3"
+                   class="form-control" style="width: 88px; height: 50px; font-size: 20px; font-weight: 800; font-family: 'Consolas', 'Courier New', monospace; text-align: center; text-transform: uppercase; letter-spacing: 2px;"
+                   placeholder="MB" value="<?= htmlspecialchars($box3) ?>" required>
+            <span style="font-size: 11px; color: #64748b; font-weight: 700; display: block; margin-top: 4px;">xx (Wilayah)</span>
+          </div>
+
+          <!-- Tombol Aksi -->
+          <div style="margin-left: 12px; padding-bottom: 18px; display: flex; gap: 8px;">
+            <button type="submit" class="btn btn-primary" style="height: 50px; padding: 0 24px; font-weight: 700; font-size: 14px; background: #0284c7; border-color: #0369a1; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 10px rgba(2, 132, 199, 0.25);">
+              <?= renderIcon('search', '', 18) ?>
+              <span>CARI & CEK STATUS (ENTER)</span>
+            </button>
+
+            <?php if (!empty($selectedNopd)): ?>
+              <a href="index.php?page=pembayaran_tahunan" class="btn btn-secondary" style="height: 50px; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px;">
+                <?= renderIcon('refresh', '', 14) ?> Reset
+              </a>
+            <?php endif; ?>
+          </div>
         </div>
       </div>
 
-      <button type="submit" class="btn btn-primary" style="padding: 10px 24px; font-weight: 700; font-size: 14px; background: #0284c7; border-color: #0369a1;">
-        <?= renderIcon('search', '', 16) ?>
-        <span>Tampilkan Data Kapal</span>
-      </button>
+      <!-- Dropdown Pilih Cepat -->
+      <div style="display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 8px 14px;">
+        <span style="font-size: 12px; font-weight: 600; color: #475569; display: flex; align-items: center; gap: 6px;">
+          <?= renderIcon('ship', '', 14) ?> Atau Pilih Kendaraan Terdaftar:
+        </span>
+        <select id="select_cepat_kapal" class="form-control" style="font-size: 12.5px; height: 36px; max-width: 580px;" onchange="onSelectCepat(this.value)">
+          <option value="">-- Klik untuk memilih NOPD & Nama Kapal --</option>
+          <?php foreach ($allNopdList as $opt): ?>
+            <?php 
+              $isOptAktif = (!empty($opt['tg_akhir_pajak']) && strtotime($opt['tg_akhir_pajak']) >= strtotime(date('Y-m-d')));
+              $tagAktif = $isOptAktif ? ' [AKTIF s.d ' . date('d/m/Y', strtotime($opt['tg_akhir_pajak'])) . ']' : ' [JATUH TEMPO ' . date('d/m/Y', strtotime($opt['tg_akhir_pajak'])) . ']';
+            ?>
+            <option value="<?= htmlspecialchars($opt['no_objek_pajak']) ?>" <?= ($selectedNopd === $opt['no_objek_pajak']) ? 'selected' : '' ?>>
+              <?= htmlspecialchars($opt['no_objek_pajak']) ?> &bull; <?= htmlspecialchars($opt['nama_kapal']) ?> (<?= htmlspecialchars($opt['nama_pemilik']) ?>) <?= $tagAktif ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </div>
 
-      <?php if (!empty($selectedNopd)): ?>
-        <a href="index.php?page=pembayaran_tahunan" class="btn btn-secondary" style="padding: 10px 16px;">
-          <?= renderIcon('refresh', '', 14) ?> Reset
-        </a>
-      <?php endif; ?>
+      <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;">
+        💡 <em>Petunjuk: Masukkan 3 bagian NOPD (contoh: <code>KA</code> - <code>0001</code> - <code>MB</code>). Kursor akan berpindah otomatis antar kotak, dan menekan <strong>ENTER</strong> di kotak manapun akan langsung memeriksa status masa pajak dan memuat seluruh data. Anda juga dapat menempelkan (Paste) nomor lengkap.</em>
+      </div>
     </form>
-    <div style="font-size: 11.5px; color: #64748b; margin-top: 8px;">
-      💡 <em>Ketik NOPD dan tekan <strong>ENTER</strong> pada keyboard untuk langsung menampilkan seluruh rincian kapal, riwayat masa pajak, dan perhitungan PKAA tahunan secara otomatis.</em>
-    </div>
   </div>
 </div>
 
@@ -290,6 +371,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
 
 <!-- 3. TAMPILAN RINCIAN SELURUH DATA KAPAL, MASA PKAA, & FORM PEMBAYARAN -->
 <?php if ($kapal && !$suksesBayar): ?>
+
+  <!-- NOTIFIKASI KHUSUS STATUS MASA PAJAK -->
+  <?php if ($isPajakAktif): ?>
+    <div class="panel" style="border: 2px solid #0284c7; background: #f0f9ff; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.12);">
+      <div class="panel-body" style="padding: 18px 22px; display: flex; align-items: flex-start; gap: 16px;">
+        <div style="width: 46px; height: 46px; border-radius: 50%; background: #0284c7; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);">
+          <?= renderIcon('check-circle', '', 26) ?>
+        </div>
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;">
+            <h3 style="margin: 0; color: #0369a1; font-size: 16px; font-weight: 800;">
+              NOTIFIKASI: PAJAK KENDARAAN AIR INI MASIH AKTIF!
+            </h3>
+            <span class="badge badge-success" style="font-size: 11px; padding: 3px 8px;">
+              STATUS: AKTIF (<?= $hariTersisa ?> Hari Tersisa)
+            </span>
+          </div>
+          <p style="margin: 0 0 10px 0; color: #0c4a6e; font-size: 13.5px; line-height: 1.5;">
+            Ketetapan pajak untuk kapal <strong><?= htmlspecialchars($kapal['nama_kapal']) ?> (<?= htmlspecialchars($kapal['no_objek_pajak']) ?>)</strong> atas nama <strong><?= htmlspecialchars($kapal['nama_pemilik']) ?></strong> saat ini masih berstatus <strong>AKTIF</strong> dan belum jatuh tempo.<br>
+            Masa berlaku ketetapan masih berjalan sampai dengan <strong><?= formatTanggalIndo($kapal['tg_akhir_pajak']) ?></strong>.
+          </p>
+          <div style="background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; padding: 8px 14px; font-size: 12.5px; color: #0369a1; display: inline-flex; align-items: center; gap: 8px;">
+            <?= renderIcon('calendar', '', 15) ?>
+            <span>Anda tetap dapat memproses pembayaran perpanjangan daftar ulang tahunan. Periode pajak baru akan otomatis diperpanjang mulai <strong><?= formatTanggalIndo($masaAwalBaru) ?></strong> s.d <strong><?= formatTanggalIndo($masaAkhirBaru) ?></strong>.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  <?php else: ?>
+    <div class="panel" style="border: 2px solid #ef4444; background: #fef2f2; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12);">
+      <div class="panel-body" style="padding: 18px 22px; display: flex; align-items: flex-start; gap: 16px;">
+        <div style="width: 46px; height: 46px; border-radius: 50%; background: #ef4444; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);">
+          <?= renderIcon('alert-triangle', '', 26) ?>
+        </div>
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;">
+            <h3 style="margin: 0; color: #991b1b; font-size: 16px; font-weight: 800;">
+              PERINGATAN: MASA PAJAK KENDARAAN AIR TELAH JATUH TEMPO
+            </h3>
+            <span class="badge badge-danger" style="font-size: 11px; padding: 3px 8px;">Terlambat / Menunggak</span>
+          </div>
+          <p style="margin: 0 0 10px 0; color: #7f1d1d; font-size: 13.5px; line-height: 1.5;">
+            Masa berlaku pajak untuk kapal <strong><?= htmlspecialchars($kapal['nama_kapal']) ?> (<?= htmlspecialchars($kapal['no_objek_pajak']) ?>)</strong> telah berakhir pada <strong><?= formatTanggalIndo($kapal['tg_akhir_pajak']) ?></strong>.<br>
+            Sistem secara otomatis mengenakan sanksi denda keterlambatan sesuai Perda Pajak Daerah NTT.
+          </p>
+          <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; padding: 8px 14px; font-size: 12.5px; color: #991b1b; display: inline-flex; align-items: center; gap: 8px;">
+            <?= renderIcon('clock', '', 15) ?>
+            <span>Denda keterlambatan terhitung: <strong><?= formatRupiah($perhitungan['bea_pkaa_denda'] + $perhitungan['opsen_pkaa_denda']) ?></strong> (Keterlambatan: <?= $perhitungan['bulan_terlambat'] ?> bulan).</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  <?php endif; ?>
+
   <!-- Form Proses Pembayaran Tahunan -->
   <form method="POST" action="index.php?page=pembayaran_tahunan" id="formBayarTahunan">
     <input type="hidden" name="aksi" value="proses_bayar_tahunan">
@@ -306,8 +441,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
               <?= renderIcon('ship', '', 16) ?>
               <span>IDENTITAS OBJEK & WAJIB PAJAK KAA</span>
             </div>
-            <span class="badge badge-<?= $kapal['status_pajak'] === 'LUNAS' ? 'success' : ($kapal['status_pajak'] === 'JATUH_TEMPO' ? 'danger' : 'info') ?>">
-              Status: <?= $kapal['status_pajak'] ?>
+            <span class="badge badge-<?= $isPajakAktif ? 'success' : 'danger' ?>">
+              Status: <?= $isPajakAktif ? 'PAJAK AKTIF' : 'JATUH TEMPO' ?>
             </span>
           </div>
           <div class="panel-body" style="padding: 16px;">
@@ -445,28 +580,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
       <!-- KOLOM KANAN: MASA PKAA TERBARU, RUMUS PERHITUNGAN, & FORM PEMBAYARAN -->
       <div>
         <!-- Panel 3: Masa Pajak PKAA Mulai Dari dan S.D Pajak Terbaru -->
-        <div class="panel" style="margin-bottom: 16px; border: 1.5px solid #f59e0b; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);">
-          <div class="panel-header" style="background: #fffbeb; border-bottom: 1.5px solid #fde68a;">
-            <div class="panel-title" style="color: #b45309; font-weight: 700;">
+        <div class="panel" style="margin-bottom: 16px; border: 1.5px solid <?= $isPajakAktif ? '#0284c7' : '#f59e0b' ?>; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.08);">
+          <div class="panel-header" style="background: <?= $isPajakAktif ? '#f0f9ff' : '#fffbeb' ?>; border-bottom: 1.5px solid <?= $isPajakAktif ? '#bae6fd' : '#fde68a' ?>;">
+            <div class="panel-title" style="color: <?= $isPajakAktif ? '#0369a1' : '#b45309' ?>; font-weight: 700;">
               <?= renderIcon('calendar', '', 16) ?>
               <span>PERIODE MASA PAJAK PKAA TAHUNAN TERBARU</span>
             </div>
-            <span class="badge badge-warning">Penetapan 1 Tahun Berjalan</span>
+            <span class="badge badge-<?= $isPajakAktif ? 'success' : 'warning' ?>">
+              <?= $isPajakAktif ? "Pajak Aktif ($hariTersisa Hari Lagi)" : "Jatuh Tempo" ?>
+            </span>
           </div>
           <div class="panel-body" style="padding: 16px;">
             <!-- Informasi Masa Pajak Lama -->
             <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
               <div>
                 <span style="font-size: 11px; color: #64748b; display: block;">Masa Pajak Sebelumnya Berakhir Pada:</span>
-                <strong style="font-size: 14px; color: <?= (strtotime(date('Y-m-d')) > strtotime($kapal['tg_akhir_pajak'])) ? '#dc2626' : '#0284c7' ?>;">
+                <strong style="font-size: 14px; color: <?= $isPajakAktif ? '#0284c7' : '#dc2626' ?>;">
                   <?= formatTanggalIndo($kapal['tg_akhir_pajak']) ?>
                 </strong>
               </div>
               <div>
-                <?php if (strtotime(date('Y-m-d')) > strtotime($kapal['tg_akhir_pajak'])): ?>
-                  <span class="badge badge-danger">Lewat Jatuh Tempo (Terkena Denda)</span>
+                <?php if ($isPajakAktif): ?>
+                  <span class="badge badge-success"><?= renderIcon('check', '', 12) ?> Masih Aktif (Perpanjangan Rutin)</span>
                 <?php else: ?>
-                  <span class="badge badge-success">Masih Berlaku (Perpanjangan Rutin)</span>
+                  <span class="badge badge-danger"><?= renderIcon('alert-triangle', '', 12) ?> Lewat Jatuh Tempo</span>
                 <?php endif; ?>
               </div>
             </div>
@@ -474,18 +611,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
             <!-- Input Masa Pajak Mulai & Masa Pajak S.D Terbaru -->
             <div class="form-grid-2">
               <div class="form-group" style="margin-bottom: 0;">
-                <label class="form-label" for="masa_pajak_awal" style="color: #b45309; font-weight: 700;">
+                <label class="form-label" for="masa_pajak_awal" style="color: #0369a1; font-weight: 700;">
                   Masa PKAA Mulai Dari <span class="required">*</span>
                 </label>
                 <input type="date" name="masa_pajak_awal" id="masa_pajak_awal" class="form-control" 
                        value="<?= htmlspecialchars($masaAwalBaru) ?>" required onchange="onMasaAwalChange(this.value)">
                 <span style="font-size: 11px; color: #64748b; margin-top: 3px; display: block;">
-                  Tanggal dimulainya tahun pajak baru
+                  Tanggal dimulainya tahun pajak baru (H+1)
                 </span>
               </div>
 
               <div class="form-group" style="margin-bottom: 0;">
-                <label class="form-label" for="masa_pajak_akhir" style="color: #b45309; font-weight: 700;">
+                <label class="form-label" for="masa_pajak_akhir" style="color: #0369a1; font-weight: 700;">
                   Masa PKAA Sampai Dengan (s.d) <span class="required">*</span>
                 </label>
                 <input type="date" name="masa_pajak_akhir" id="masa_pajak_akhir" class="form-control" 
@@ -624,14 +761,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
 
     </div>
   </form>
-<?php elseif (!$kapal && !empty($selectedNopd)): ?>
+<?php elseif (!$kapal && !empty($selectedNopd) && !empty($box2)): ?>
   <div class="panel" style="text-align: center; padding: 40px 20px;">
     <div style="color: #ef4444; margin-bottom: 12px;">
       <?= renderIcon('alert-triangle', '', 48) ?>
     </div>
     <h3 style="color: #0f172a; margin: 0 0 6px 0;">NOPD Tidak Ditemukan!</h3>
     <p style="color: #64748b; max-width: 480px; margin: 0 auto 18px auto;">
-      Objek dengan nomor <strong><?= htmlspecialchars($selectedNopd) ?></strong> tidak terdaftar di sistem JANGKAR NTT. Pastikan penulisan nomor objek pajak sudah sesuai.
+      Objek dengan nomor <strong><?= htmlspecialchars($selectedNopd) ?></strong> tidak terdaftar di sistem JANGKAR NTT. Pastikan penulisan 3 kotak nomor objek pajak sudah sesuai.
     </p>
     <a href="index.php?page=pembayaran_tahunan" class="btn btn-secondary">
       Kembali Cari NOPD Lain
@@ -656,16 +793,154 @@ function onMasaAwalChange(tglAwal) {
   }
 }
 
-// Listener keyboard shortcut: Tekan Enter pada input NOPD langsung submit
+// Interaksi Cerdas 3 Kotak NOPD: [xx] [xxxx] [xx]
 document.addEventListener('DOMContentLoaded', function() {
-  var inp = document.getElementById('input_nopd_cari');
-  if (inp) {
-    inp.addEventListener('keydown', function(e) {
+  const box1 = document.getElementById('input_nopd_1');
+  const box2 = document.getElementById('input_nopd_2');
+  const box3 = document.getElementById('input_nopd_3');
+  const form = document.getElementById('formCariNopd');
+  const hiddenNopd = document.getElementById('input_nopd_gabungan');
+
+  function updateHiddenNopd() {
+    if (hiddenNopd && box1 && box2 && box3) {
+      const b1 = box1.value.trim().toUpperCase();
+      const b2 = box2.value.trim().toUpperCase();
+      const b3 = box3.value.trim().toUpperCase();
+      hiddenNopd.value = (b1 + ' ' + b2 + ' ' + b3).trim();
+    }
+  }
+
+  // Auto focus cerdas: Jika box1 terisi (KA) dan box2 kosong, langsung fokus ke box2
+  if (box1 && box1.value.trim().length === 2 && box2 && !box2.value.trim()) {
+    box2.focus();
+    box2.select();
+  }
+
+  // 1. Event Kotak 1 [xx]
+  if (box1) {
+    box1.addEventListener('input', function() {
+      this.value = this.value.toUpperCase();
+      updateHiddenNopd();
+      if (this.value.length >= 2 && box2) {
+        box2.focus();
+        box2.select();
+      }
+    });
+
+    box1.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') {
         e.preventDefault();
-        document.getElementById('formCariNopd').submit();
+        updateHiddenNopd();
+        form.submit();
       }
+    });
+
+    box1.addEventListener('paste', function(e) {
+      e.preventDefault();
+      const pasteText = (e.clipboardData || window.clipboardData).getData('text').trim().toUpperCase();
+      parseAndDistributeNopd(pasteText);
+    });
+  }
+
+  // 2. Event Kotak 2 [xxxx]
+  if (box2) {
+    box2.addEventListener('input', function() {
+      this.value = this.value.toUpperCase();
+      updateHiddenNopd();
+      if (this.value.length >= 4 && box3) {
+        box3.focus();
+        box3.select();
+      }
+    });
+
+    box2.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        updateHiddenNopd();
+        form.submit();
+      } else if (e.key === 'Backspace' && this.value === '' && box1) {
+        box1.focus();
+      }
+    });
+
+    box2.addEventListener('paste', function(e) {
+      e.preventDefault();
+      const pasteText = (e.clipboardData || window.clipboardData).getData('text').trim().toUpperCase();
+      parseAndDistributeNopd(pasteText);
+    });
+  }
+
+  // 3. Event Kotak 3 [xx]
+  if (box3) {
+    box3.addEventListener('input', function() {
+      this.value = this.value.toUpperCase();
+      updateHiddenNopd();
+    });
+
+    box3.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        updateHiddenNopd();
+        form.submit();
+      } else if (e.key === 'Backspace' && this.value === '' && box2) {
+        box2.focus();
+      }
+    });
+
+    box3.addEventListener('paste', function(e) {
+      e.preventDefault();
+      const pasteText = (e.clipboardData || window.clipboardData).getData('text').trim().toUpperCase();
+      parseAndDistributeNopd(pasteText);
+    });
+  }
+
+  if (form) {
+    form.addEventListener('submit', function() {
+      updateHiddenNopd();
     });
   }
 });
+
+// Helper untuk memecah string NOPD utuh ke dalam 3 kotak
+function parseAndDistributeNopd(raw) {
+  if (!raw) return;
+  const box1 = document.getElementById('input_nopd_1');
+  const box2 = document.getElementById('input_nopd_2');
+  const box3 = document.getElementById('input_nopd_3');
+  const form = document.getElementById('formCariNopd');
+  const hiddenNopd = document.getElementById('input_nopd_gabungan');
+
+  const cleaned = raw.replace(/[-_.]/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+  const parts = cleaned.split(' ');
+
+  if (parts.length >= 3) {
+    if (box1) box1.value = parts[0];
+    if (box2) box2.value = parts[1];
+    if (box3) box3.value = parts[2];
+  } else {
+    const noSpace = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const match = noSpace.match(/^([A-Z]{2})(\d{1,4})([A-Z]{1,3})$/);
+    if (match) {
+      if (box1) box1.value = match[1];
+      if (box2) box2.value = match[2].padStart(4, '0');
+      if (box3) box3.value = match[3];
+    } else {
+      if (box1) box1.value = raw.substring(0, 2);
+    }
+  }
+
+  if (hiddenNopd && box1 && box2 && box3) {
+    hiddenNopd.value = (box1.value.trim() + ' ' + box2.value.trim() + ' ' + box3.value.trim()).trim();
+  }
+
+  if (form) {
+    form.submit();
+  }
+}
+
+// Helper untuk pilihan cepat dari dropdown
+function onSelectCepat(val) {
+  if (!val) return;
+  parseAndDistributeNopd(val);
+}
 </script>
