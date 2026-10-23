@@ -30,6 +30,7 @@ $moduleMap = [
     'verifikasi_perubahan'   => __DIR__ . '/modules/pelayanan/verifikasi_perubahan.php',
     'status_pengajuan'       => __DIR__ . '/modules/pelayanan/status_pengajuan.php',
     'superpkaa'              => __DIR__ . '/modules/pelayanan/superpkaa.php',
+    'pembayaran_tahunan'     => __DIR__ . '/modules/pelayanan/pembayaran_tahunan.php',
     'cetak_ulang_superpkaa'  => __DIR__ . '/modules/pelayanan/cetak_ulang_superpkaa.php',
     'riwayat_cetak_superpkaa'=> __DIR__ . '/modules/pelayanan/riwayat_cetak_superpkaa.php',
     'skpd'                   => __DIR__ . '/modules/pelayanan/skpd.php',

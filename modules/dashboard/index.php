@@ -51,6 +51,9 @@ $tunggakanList = $stmtTunggakan->fetchAll();
     <button type="button" class="btn btn-secondary btn-sm" onclick="bukaLayarBantu()">
       <?= renderIcon('search', '', 14) ?> Layar Bantu NOPD (Ctrl+B)
     </button>
+    <a href="index.php?page=pembayaran_tahunan" class="btn btn-secondary btn-sm" style="background:#e0f2fe; color:#0284c7; border-color:#bae6fd; font-weight:700;">
+      <?= renderIcon('calendar', '', 14) ?> Pembayaran Tahunan
+    </a>
     <a href="index.php?page=pendaftaran" class="btn btn-primary btn-sm">
       <?= renderIcon('ship', '', 14) ?> Pendaftaran Baru (F2)
     </a>
@@ -217,8 +220,8 @@ $tunggakanList = $stmtTunggakan->fetchAll();
                     <span style="font-size: 10px; color: #dc2626;">Lewat <?= $tg['hari_lewat'] ?> hari</span>
                   </td>
                   <td class="text-center">
-                    <a href="index.php?page=superpkaa&nopd=<?= urlencode($tg['no_objek_pajak']) ?>" class="btn btn-accent btn-sm" title="Terbitkan Ketetapan + Denda">
-                      Tetapkan
+                    <a href="index.php?page=pembayaran_tahunan&nopd=<?= urlencode($tg['no_objek_pajak']) ?>" class="btn btn-accent btn-sm" title="Bayar PKAA Tahunan">
+                      Bayar Tahunan
                     </a>
                   </td>
                 </tr>

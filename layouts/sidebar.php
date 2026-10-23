@@ -37,6 +37,12 @@ if ($userRole === 'ADMIN') {
           <span class="shortcut-tag">F2</span>
         </a>
       </li>
+      <li class="nav-item <?= $currentPage === 'pembayaran_tahunan' ? 'active' : '' ?>">
+        <a href="index.php?page=pembayaran_tahunan" data-title="Pembayaran PKAA Tahunan">
+          <?= renderIcon('calendar', '', 16) ?>
+          <span>Pembayaran PKAA Tahunan</span>
+        </a>
+      </li>
       <li class="nav-item <?= $currentPage === 'ajukan_perubahan' ? 'active' : '' ?>">
         <a href="index.php?page=ajukan_perubahan" data-title="Ajukan Perubahan Data">
           <?= renderIcon('file-edit', '', 16) ?>
@@ -89,6 +95,12 @@ if ($userRole === 'ADMIN') {
           <?= renderIcon('ship', '', 16) ?>
           <span>Pendaftaran Wajib Pajak</span>
           <span class="shortcut-tag">F2</span>
+        </a>
+      </li>
+      <li class="nav-item <?= $currentPage === 'pembayaran_tahunan' ? 'active' : '' ?>">
+        <a href="index.php?page=pembayaran_tahunan" data-title="Pembayaran PKAA Tahunan">
+          <?= renderIcon('calendar', '', 16) ?>
+          <span>Pembayaran PKAA Tahunan</span>
         </a>
       </li>
       <li class="nav-item <?= $currentPage === 'verifikasi_perubahan' ? 'active' : '' ?>">
@@ -196,6 +208,12 @@ if ($userRole === 'ADMIN') {
   <?php else: ?>
     <div class="nav-section-title">A. Kasir Kasda / Bank NTT</div>
     <ul class="nav-menu">
+      <li class="nav-item <?= $currentPage === 'pembayaran_tahunan' ? 'active' : '' ?>">
+        <a href="index.php?page=pembayaran_tahunan" data-title="Pembayaran PKAA Tahunan">
+          <?= renderIcon('calendar', '', 16) ?>
+          <span>Pembayaran PKAA Tahunan</span>
+        </a>
+      </li>
       <li class="nav-item <?= $currentPage === 'skpd' ? 'active' : '' ?>">
         <a href="index.php?page=skpd" data-title="Pembayaran & SKPD (F3)">
           <?= renderIcon('credit-card', '', 16) ?>
