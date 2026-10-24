@@ -90,6 +90,50 @@ if (!isset($GLOBALS['pdo'])) {
     $pdo = $GLOBALS['pdo'];
 }
 
+if (!function_exists('ensureSkpdSchemaUpdated')) {
+    /**
+     * Memastikan kolom status pembatalan dan log audit SKPD tersedia
+     */
+    function ensureSkpdSchemaUpdated($pdo) {
+        if (!empty($GLOBALS['__skpd_schema_checked'])) return;
+        $GLOBALS['__skpd_schema_checked'] = true;
+        try {
+            $stmt = $pdo->query("SHOW COLUMNS FROM transaksi_skpd LIKE 'status'");
+            if (!$stmt->fetch()) {
+                $pdo->exec("
+                    ALTER TABLE transaksi_skpd 
+                    ADD COLUMN status ENUM('SAH', 'BATAL') NOT NULL DEFAULT 'SAH' AFTER total_bayar,
+                    ADD COLUMN tg_akhir_sebelumnya DATE NULL AFTER status,
+                    ADD COLUMN alasan_batal TEXT NULL AFTER tg_akhir_sebelumnya,
+                    ADD COLUMN dibatalkan_oleh_id INT NULL AFTER alasan_batal,
+                    ADD COLUMN tgl_batal DATETIME NULL AFTER dibatalkan_oleh_id
+                ");
+            }
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS log_cetak_skpd (
+                  id INT AUTO_INCREMENT PRIMARY KEY,
+                  no_skpd VARCHAR(50) NOT NULL,
+                  no_superpkaa VARCHAR(50) NOT NULL,
+                  no_objek_pajak VARCHAR(30) NOT NULL,
+                  nama_kapal VARCHAR(150) NOT NULL,
+                  nama_pemilik VARCHAR(150) NOT NULL,
+                  dicetak_oleh_id INT NOT NULL,
+                  dicetak_oleh_nama VARCHAR(100) NOT NULL,
+                  ip_address VARCHAR(50) NULL,
+                  tgl_cetak DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  keterangan VARCHAR(255) DEFAULT 'Cetak Lembar Resmi SKPD',
+                  INDEX idx_log_skpd (no_skpd),
+                  INDEX idx_log_skpd_nopd (no_objek_pajak)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (Exception $e) {
+            // Lewati jika belum inisialisasi tabel
+        }
+    }
+}
+
+ensureSkpdSchemaUpdated($pdo);
+
 if (!function_exists('getDB')) {
     /**
      * Mengambil instance tunggal PDO Database

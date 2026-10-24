@@ -30,7 +30,7 @@ Options -Indexes
 # 4. Blokir Akses Langsung ke Direktori Internal
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(database|scratch)/ - [F,L]
+    RewriteRule ^(database|config|scratch)/ - [F,L]
 </IfModule>
 
 # 5. Security Response Headers

@@ -1,12 +1,22 @@
 <?php
 // modules/pelayanan/skpd.php - Pembayaran & Penetapan SKPD PKAA
+if (!defined('APP_INIT')) {
+    http_response_code(403);
+    die("Akses langsung ke modul ini tidak diizinkan.");
+}
+
 $pageTitle = "Pembayaran & Cetak SKPD PKAA";
+$currentUser = currentUser();
+$userRole = $currentUser['role'] ?? 'OPERATOR';
 
 $selectedSuper = trim($_GET['super'] ?? $_POST['no_superpkaa'] ?? '');
 $selectedNopd = trim($_GET['nopd'] ?? $_POST['no_objek_pajak'] ?? '');
 
 $superData = null;
 $kapal = null;
+$skpdSahAktif = null;
+$isPajakAktif = false;
+$hariTersisa = 0;
 $pesan = '';
 $tipePesan = '';
 
@@ -56,9 +66,43 @@ if (!empty($selectedSuper)) {
     }
 }
 
+// Cek apakah ada SKPD sah aktif untuk objek ini & cek status keaktifan pajak
+if ($superData) {
+    $stmtSkpd = $pdo->prepare("
+        SELECT sk.*, p.nama_pejabat as nama_pengesah, p.jabatan as jabatan_pengesah
+        FROM transaksi_skpd sk
+        LEFT JOIN pejabat p ON sk.pejabat_skpd_id = p.id
+        WHERE sk.no_objek_pajak = ? AND sk.status = 'SAH'
+        ORDER BY sk.created_at DESC LIMIT 1
+    ");
+    $stmtSkpd->execute([$superData['no_objek_pajak']]);
+    $skpdSahAktif = $stmtSkpd->fetch();
+
+    if (!empty($kapal['tg_akhir_pajak']) && $kapal['tg_akhir_pajak'] !== '0000-00-00') {
+        $todayTs = strtotime(date('Y-m-d'));
+        $expTs = strtotime($kapal['tg_akhir_pajak']);
+        if ($expTs >= $todayTs && $kapal['status_pajak'] === 'LUNAS') {
+            $isPajakAktif = true;
+            $hariTersisa = (int)ceil(($expTs - $todayTs) / 86400);
+        }
+    }
+}
+
 // Proses Pembayaran & SKPD
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'proses_skpd' && $superData) {
-    // Validasi alur: Wajib Cetak SUPERPKAA terlebih dahulu
+    // 1. Validasi Token CSRF
+    if (!verifyCsrfToken()) {
+        setFlash('error', 'Validasi Keamanan Gagal (CSRF)', 'Sesi atau token keamanan tidak valid. Silakan muat ulang halaman.');
+        safeRedirect("index.php?page=skpd" . (!empty($selectedSuper) ? "&super=" . urlencode($selectedSuper) : ""));
+    }
+
+    // 2. Cegah Pendoubelan Transaksi jika pajak masih aktif atau sudah lunas
+    if ($isPajakAktif || $superData['status'] === 'LUNAS') {
+        setFlash('warning', 'Pajak Masih Aktif!', 'Pajak untuk kendaraan ini masih aktif dan SKPD sah telah terbit. Tombol penerbitan baru dinonaktifkan untuk mencegah pendoubelan.');
+        safeRedirect("index.php?page=skpd" . (!empty($selectedSuper) ? "&super=" . urlencode($selectedSuper) : ""));
+    }
+
+    // 3. Validasi alur: Wajib Cetak SUPERPKAA terlebih dahulu
     if (empty($superData['status_cetak'])) {
         setFlash('error', 'Cetak SUPERPKAA Diperlukan!', 'Dokumen SUPERPKAA belum dicetak! Wajib mencetak lembar SUPERPKAA terlebih dahulu sebelum dapat memproses & mencetak SKPD.');
         safeRedirect("index.php?page=skpd&super=" . urlencode($superData['no_superpkaa']));
@@ -66,16 +110,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
 
     $noSkpd = generateNextSKPD($pdo);
     $tglBayar = trim($_POST['tgl_bayar'] ?? date('Y-m-d'));
-    $metodeBayar = trim($_POST['metode_bayar'] ?? 'BANK KALTIMTARA');
-    $noResi = trim($_POST['no_resi_bukti'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tglBayar) || strtotime($tglBayar) === false) {
+        $tglBayar = date('Y-m-d');
+    }
+
+    $metodeBayar = trim(strip_tags($_POST['metode_bayar'] ?? 'BANK NTT (Kasda)'));
+    $noResi = trim(strip_tags($_POST['no_resi_bukti'] ?? ''));
     $pejabatId = (int)($_POST['pejabat_skpd_id'] ?? 1);
-    $kasirId = currentUser()['id'] ?? 1;
+    $kasirId = $currentUser['id'] ?? 1;
 
     $beaPokok = (float)$superData['bea_pkaa_pokok'];
     $beaDenda = (float)$superData['bea_pkaa_denda'];
     $opsenPokok = (float)$superData['opsen_pkaa_pokok'];
     $opsenDenda = (float)$superData['opsen_pkaa_denda'];
     $totalBayar = (float)$superData['total_ketetapan'];
+    $tglLamaKapal = $kapal['tg_akhir_pajak'] ?? null;
 
     try {
         $pdo->beginTransaction();
@@ -85,11 +134,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
                 no_skpd, no_superpkaa, no_objek_pajak, tgl_bayar, metode_bayar,
                 no_resi_bukti, bea_pkaa_pokok_bayar, bea_pkaa_denda_bayar,
                 opsen_pkaa_pokok_bayar, opsen_pkaa_denda_bayar, total_bayar,
+                status, tg_akhir_sebelumnya,
                 pejabat_skpd_id, id_petugas_kasir, created_at
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?,
+                'SAH', ?,
                 ?, ?, NOW()
             )
         ");
@@ -97,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
             $noSkpd, $superData['no_superpkaa'], $superData['no_objek_pajak'], $tglBayar, $metodeBayar,
             $noResi, $beaPokok, $beaDenda,
             $opsenPokok, $opsenDenda, $totalBayar,
+            $tglLamaKapal,
             $pejabatId, $kasirId
         ]);
 
@@ -107,6 +159,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
         $pdo->prepare("UPDATE kendaraan_air SET status_pajak = 'LUNAS', tg_akhir_pajak = ? WHERE no_objek_pajak = ?")
             ->execute([$superData['masa_pajak_akhir'], $superData['no_objek_pajak']]);
 
+        // Audit Trail Pencetakan Lembar SKPD
+        logCetakSKPD(
+            $pdo,
+            $noSkpd,
+            $superData['no_superpkaa'],
+            $superData['no_objek_pajak'],
+            $superData['nama_kapal'],
+            $superData['nama_pemilik'],
+            $kasirId,
+            $currentUser['nama_lengkap'] ?? 'Petugas Kasir Kasda',
+            'Penerbitan & Pembayaran SKPD Kasda Sah'
+        );
+
         $pdo->commit();
 
         setFlash('success', 'Pembayaran SKPD Berhasil', "Surat Ketetapan Pajak Daerah (SKPD) Nomor: <strong>$noSkpd</strong> telah berhasil disahkan & lunas!");
@@ -115,8 +180,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
         $noSkpdTerbit = $noSkpd;
     } catch (Exception $e) {
         $pdo->rollBack();
-        setFlash('error', 'Gagal Memproses SKPD', $e->getMessage());
-        $pesan = "Gagal memproses pembayaran SKPD: " . $e->getMessage();
+        error_log("Gagal proses SKPD: " . $e->getMessage());
+        setFlash('error', 'Gagal Memproses SKPD', 'Terjadi kesalahan sistem saat memproses SKPD.');
+        $pesan = "Gagal memproses pembayaran SKPD. Silakan coba kembali atau hubungi administrator.";
         $tipePesan = 'danger';
     }
 }
@@ -176,7 +242,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
 </div>
 
 <?php if ($superData): ?>
-  <?php if (empty($superData['status_cetak'])): ?>
+  <?php if ($isPajakAktif || $superData['status'] === 'LUNAS'): ?>
+    <div class="panel" style="background:#f0fdf4; border:2px solid #10b981; margin-bottom:14px; box-shadow:0 4px 12px rgba(16,185,129,0.15);">
+      <div class="panel-body" style="padding:16px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="color:#059669;"><?= renderIcon('check-circle', '', 36) ?></div>
+          <div>
+            <div style="font-weight:800; color:#065f46; font-size:15px;">PAJAK KENDARAAN AIR MASIH AKTIF &bull; SKPD TELAH DISAHKAN</div>
+            <div style="color:#047857; font-size:12.5px; margin-top:2px; line-height: 1.5;">
+              Status pajak kendaraan <strong><?= htmlspecialchars($kapal['nama_kapal']) ?></strong> berstatus <strong>LUNAS</strong> sampai dengan <strong><?= formatTanggalIndo($kapal['tg_akhir_pajak']) ?></strong> (Tersisa <?= $hariTersisa ?> hari lagi).<br>
+              Dokumen SKPD Sah: <strong><?= htmlspecialchars($skpdSahAktif['no_skpd'] ?? '-') ?></strong> telah terbit pada <?= !empty($skpdSahAktif['tgl_bayar']) ? formatTanggalIndo($skpdSahAktif['tgl_bayar']) : '-' ?>.
+              <div style="font-size:11.5px; color:#065f46; font-style:italic; margin-top:4px;">
+                🔒 <strong>Tombol cetak baru dinonaktifkan</strong> untuk mencegah pendoubelan cetak. Jika dokumen fisik rusak/cacat cetak, hubungi Admin Induk untuk membatalkan SKPD lama terlebih dahulu.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <?php if (!empty($skpdSahAktif['no_skpd'])): ?>
+            <a href="cetak/skpd_print.php?no=<?= urlencode($skpdSahAktif['no_skpd']) ?>" target="_blank" class="btn btn-success" style="font-weight:700; padding:10px 18px; box-shadow:0 2px 8px rgba(16,185,129,0.3);">
+              <?= renderIcon('printer', '', 16) ?> Cetak Salinan SKPD Sah
+            </a>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+  <?php elseif (empty($superData['status_cetak'])): ?>
     <div class="panel" style="background:#fffbeb; border:2px solid #f59e0b; margin-bottom:14px; box-shadow:0 4px 12px rgba(245,158,11,0.15);">
       <div class="panel-body" style="padding:14px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div style="display:flex; align-items:center; gap:12px;">
@@ -199,6 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
 
   <!-- Form Pembayaran & Format PuTTY Asli -->
   <form method="POST" action="index.php?page=skpd" class="panel">
+    <?= csrfField() ?>
     <input type="hidden" name="aksi" value="proses_skpd">
     <input type="hidden" name="no_superpkaa" value="<?= htmlspecialchars($superData['no_superpkaa']) ?>">
     <input type="hidden" name="no_objek_pajak" value="<?= htmlspecialchars($superData['no_objek_pajak']) ?>">
@@ -353,12 +445,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
           <?= renderIcon('printer', '', 16) ?>
           <span>CETAK SKPD SEKARANG (LANDSCAPE)</span>
         </a>
-      <?php elseif ($superData['status'] === 'LUNAS'): ?>
+      <?php elseif ($isPajakAktif || $superData['status'] === 'LUNAS'): ?>
         <a href="index.php?page=skpd" class="btn btn-secondary">Transaksi SKPD Lain</a>
-        <a href="cetak/skpd_print.php?no=<?= urlencode($superData['no_skpd'] ?? '') ?>" target="_blank" class="btn btn-success" style="padding: 8px 18px;">
-          <?= renderIcon('printer', '', 16) ?>
-          <span>CETAK SKPD (SUDAH LUNAS)</span>
-        </a>
+        <?php if (!empty($skpdSahAktif['no_skpd'])): ?>
+          <a href="cetak/skpd_print.php?no=<?= urlencode($skpdSahAktif['no_skpd']) ?>" target="_blank" class="btn btn-success" style="padding: 8px 18px; font-weight:700;">
+            <?= renderIcon('printer', '', 16) ?>
+            <span>CETAK SALINAN SKPD (SUDAH LUNAS)</span>
+          </a>
+        <?php endif; ?>
+        <button type="button" class="btn btn-secondary" disabled style="cursor:not-allowed; opacity:0.6; font-weight:700; background:#94a3b8; color:#fff;" title="Pajak masih aktif. Penerbitan SKPD baru dinonaktifkan untuk mencegah pendoubelan.">
+          <?= renderIcon('x', '', 14) ?> Cetak SKPD Dinonaktifkan (Pajak Masih Aktif)
+        </button>
       <?php elseif (empty($superData['status_cetak'])): ?>
         <a href="index.php?page=cetak_ulang_superpkaa" class="btn btn-secondary">Buka Menu Cetak SUPERPKAA</a>
         <a href="cetak/superpkaa_print.php?no=<?= urlencode($superData['no_superpkaa']) ?>" target="_blank" class="btn btn-warning" style="background:#d97706; border-color:#b45309; color:#fff; font-weight:700; padding: 8px 20px;">
@@ -367,7 +464,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
         </a>
       <?php else: ?>
         <a href="index.php?page=cetak_ulang_superpkaa" class="btn btn-secondary">Kembali</a>
-        <button type="submit" class="btn btn-primary" style="padding: 8px 18px;" onclick="return confirm('Konfirmasi penerimaan pembayaran sebesar <?= formatRupiah($superData['total_ketetapan']) ?> dan cetak SKPD?')">
+        <button type="submit" class="btn btn-primary" style="padding: 8px 24px; font-weight:700; background:#059669; border-color:#047857;" onclick="return confirm('Konfirmasi penerimaan pembayaran sebesar <?= formatRupiah($superData['total_ketetapan']) ?> dan sahkan SKPD?')">
           <?= renderIcon('check', '', 16) ?>
           <span>PROSES PEMBAYARAN & CETAK SKPD</span>
         </button>

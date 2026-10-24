@@ -202,11 +202,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
                 no_skpd, no_superpkaa, no_objek_pajak, tgl_bayar, metode_bayar,
                 no_resi_bukti, bea_pkaa_pokok_bayar, bea_pkaa_denda_bayar,
                 opsen_pkaa_pokok_bayar, opsen_pkaa_denda_bayar, total_bayar,
+                status, tg_akhir_sebelumnya,
                 pejabat_skpd_id, id_petugas_kasir, created_at
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?,
+                'SAH', ?,
                 ?, ?, NOW()
             )
         ");
@@ -214,6 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
             $noSkpd, $noSuper, $selectedNopd, $tglBayar, $metodeBayar,
             $noResi, $beaPokok, $beaDenda,
             $opsenPokok, $opsenDenda, $totalBayar,
+            $tglAkhirLama ?: null,
             $pejabatId, $currentUser['id'] ?? 1
         ]);
 
@@ -226,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
         ");
         $stmtUpdKapal->execute([$masaAkhirFix, $selectedNopd]);
 
-        // 4. Catat Log Riwayat Cetak SUPERPKAA
+        // 4. Catat Log Riwayat Cetak SUPERPKAA & SKPD
         logCetakSuperPKAA(
             $pdo,
             $noSuper,
@@ -236,6 +239,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
             $currentUser['id'] ?? 1,
             $currentUser['nama_lengkap'] ?? 'Petugas Loket BPAD',
             'Penerbitan & Pembayaran PKAA Tahunan'
+        );
+
+        logCetakSKPD(
+            $pdo,
+            $noSkpd,
+            $noSuper,
+            $selectedNopd,
+            $kapal['nama_kapal'],
+            $kapal['nama_pemilik'],
+            $currentUser['id'] ?? 1,
+            $currentUser['nama_lengkap'] ?? 'Petugas Kasir BPAD',
+            'Penerbitan & Pembayaran SKPD Tahunan Sah'
         );
 
         $pdo->commit();

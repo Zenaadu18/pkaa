@@ -256,13 +256,19 @@ CREATE TABLE `transaksi_skpd` (
   `opsen_pkaa_pokok_bayar` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
   `opsen_pkaa_denda_bayar` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
   `total_bayar` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  `status` ENUM('SAH', 'BATAL') NOT NULL DEFAULT 'SAH',
+  `tg_akhir_sebelumnya` DATE NULL,
+  `alasan_batal` TEXT NULL,
+  `dibatalkan_oleh_id` INT NULL,
+  `tgl_batal` DATETIME NULL,
   `pejabat_skpd_id` INT NOT NULL,
   `id_petugas_kasir` INT NOT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT `fk_skpd_super` FOREIGN KEY (`no_superpkaa`) REFERENCES `transaksi_superpkaa` (`no_superpkaa`) ON UPDATE CASCADE,
   CONSTRAINT `fk_skpd_kaa` FOREIGN KEY (`no_objek_pajak`) REFERENCES `kendaraan_air` (`no_objek_pajak`) ON UPDATE CASCADE,
   INDEX `idx_skpd_nopd` (`no_objek_pajak`),
-  INDEX `idx_skpd_tgl` (`tgl_bayar`)
+  INDEX `idx_skpd_tgl` (`tgl_bayar`),
+  INDEX `idx_skpd_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================

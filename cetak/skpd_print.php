@@ -35,6 +35,16 @@ if (!$data) {
     die("Data SKPD tidak ditemukan.");
 }
 
+// Catat log cetak fisik SKPD
+$userLogId = $_SESSION['user_id'] ?? null;
+if (function_exists('logCetakSKPD') && $userLogId) {
+    $ket = 'Cetak fisik lembar SKPD';
+    if (($data['status'] ?? '') === 'BATAL') {
+        $ket .= ' (STATUS DOKUMEN: BATAL)';
+    }
+    logCetakSKPD($pdo, $data['no_skpd'], 'SKPD', $userLogId, $ket);
+}
+
 // Pejabat Penetapan (Kasi / Penetap)
 $pejabatPenetap = $pdo->query("SELECT * FROM pejabat WHERE jabatan LIKE '%Penetapan%' AND is_active = 1 LIMIT 1")->fetch();
 
@@ -176,6 +186,34 @@ $namaUpt = getSetting($pdo, 'nama_upt', 'UPTD PENDAPATAN DAERAH WILAYAH KOTA KUP
       text-align: center;
       width: 440px;
     }
+    .watermark-batal {
+      position: fixed;
+      top: 35%;
+      left: 10%;
+      right: 10%;
+      transform: rotate(-25deg);
+      font-size: 54pt;
+      font-weight: 900;
+      color: rgba(220, 38, 38, 0.22);
+      border: 8px solid rgba(220, 38, 38, 0.35);
+      text-align: center;
+      padding: 16px 20px;
+      text-transform: uppercase;
+      letter-spacing: 6px;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    .banner-batal {
+      background: #fee2e2;
+      border: 2px solid #ef4444;
+      color: #991b1b;
+      padding: 8px 12px;
+      font-size: 9.5pt;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 12px;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body class="print-document">
@@ -196,6 +234,14 @@ $namaUpt = getSetting($pdo, 'nama_upt', 'UPTD PENDAPATAN DAERAH WILAYAH KOTA KUP
 </div>
 
 <div class="skpd-landscape-container">
+  <?php if (($data['status'] ?? '') === 'BATAL'): ?>
+    <div class="watermark-batal">DOKUMEN DIBATALKAN</div>
+    <div class="banner-batal">
+      PERINGATAN: DOKUMEN SKPD INI TELAH RESMI DIBATALKAN OLEH ADMINISTRATOR PADA <?= !empty($data['tgl_batal']) ? date('d/m/Y H:i', strtotime($data['tgl_batal'])) : '-' ?>.<br>
+      Alasan Pembatalan: <?= htmlspecialchars($data['alasan_batal'] ?? 'Tidak ditentukan') ?>. DOKUMEN INI TIDAK BERLAKU SEBAGAI BUKTI PEMBAYARAN SAH.
+    </div>
+  <?php endif; ?>
+
   <!-- Judul Dokumen Sesuai Acuan Gambar -->
   <div class="skpd-main-title">SURAT KETETAPAN PAJAK DAERAH</div>
 

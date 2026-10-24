@@ -266,6 +266,34 @@ function logCetakSuperPKAA($pdo, $noSuper, $noObjekPajak, $namaKapal, $namaPemil
 }
 
 /**
+ * Pencatatan Riwayat Cetak SKPD Kasda
+ */
+function logCetakSKPD($pdo, $noSkpd, $noSuper, $noObjekPajak, $namaKapal, $namaPemilik, $userId = null, $userName = null, $keterangan = 'Cetak Lembar Resmi SKPD') {
+    try {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $stmt = $pdo->prepare("
+            INSERT INTO log_cetak_skpd 
+            (no_skpd, no_superpkaa, no_objek_pajak, nama_kapal, nama_pemilik, dicetak_oleh_id, dicetak_oleh_nama, ip_address, keterangan)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $noSkpd,
+            $noSuper,
+            $noObjekPajak,
+            $namaKapal,
+            $namaPemilik,
+            $userId ?: 1,
+            $userName ?: 'Petugas Kasir Kasda',
+            $ip,
+            $keterangan
+        ]);
+        return true;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+/**
  * Mengambil daftar 22 Kabupaten/Kota di NTT
  */
 function getKabKotaList($pdo) {
