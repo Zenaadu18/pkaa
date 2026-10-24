@@ -113,9 +113,26 @@ PKAA/
 │   └── laporan/             # Rekapitulasi penerimaan, tunggakan, & ekspor cetak
 ├── .env.example             # Template konfigurasi environment
 ├── .gitignore               # Konfigurasi file yang diabaikan oleh Git
+├── .htaccess                # Proteksi keamanan Apache, security headers, & blokir .env
 ├── index.php                # Front controller / router tunggal aplikasi
 └── README.md                # Dokumentasi proyek
 ```
+
+---
+
+## 🗄️ Dokumentasi Basis Data & ERD
+Struktur basis data `db_pkaa` dirancang terintegrasi untuk menangani pendaftaran, penilaian NJKB (Body & Mesin), penetapan SUPERPKAA, serta pelunasan SKPD dan Opsen 66%.
+* **Dokumentasi Lengkap & Kamus Data**: [database/ERD.md](database/ERD.md)
+* **Diagram Visual**: Memetakan relasi 15 tabel (`ref_kabupaten_kota`, `kendaraan_air`, `mesin_kendaraan`, `transaksi_superpkaa`, `transaksi_skpd`, `users`, `pejabat`, dll.) berbasis diagram Mermaid.
+* **Master Schema**: [database/schema.sql](database/schema.sql)
+
+---
+
+## 🛡️ Keamanan Sistem
+Aplikasi telah dilengkapi proteksi keamanan:
+- **Proteksi CSRF**: Token verifikasi kriptografis pada setiap formulir transaksi finansial.
+- **Integritas Fiskal**: Penguncian masa pajak dan kalkulasi pokok/opsen 66% mutlak di sisi server (*anti-tampering*).
+- **Proteksi Server**: Aturan `.htaccess` memblokir akses publik ke file `.env`, skema `.sql`, serta mengaktifkan HTTP Security Headers.
 
 ---
 

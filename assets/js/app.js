@@ -194,12 +194,16 @@ function showToast(type, title, message, duration) {
     iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
   }
 
+  var safeTitle = String(title || '').replace(/[&<>"']/g, function(s) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[s];
+  });
+
   var toast = document.createElement('div');
   toast.className = 'modern-toast toast-' + type;
   toast.innerHTML = 
     '<div class="modern-toast-icon">' + iconSvg + '</div>' +
     '<div class="modern-toast-content">' +
-      '<div class="modern-toast-title">' + title + '</div>' +
+      '<div class="modern-toast-title">' + safeTitle + '</div>' +
       '<div class="modern-toast-message">' + message + '</div>' +
     '</div>' +
     '<button type="button" class="modern-toast-close" onclick="closeToast(this.parentElement)">&times;</button>' +

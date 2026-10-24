@@ -1,8 +1,20 @@
 <?php
 // modules/pelayanan/pembayaran_tahunan.php - Pembayaran Pajak Kendaraan di Atas Air (PKAA) Tahunan
+if (!defined('APP_INIT')) {
+    http_response_code(403);
+    die("Akses langsung ke modul ini tidak diizinkan.");
+}
+
 $pageTitle = "Pembayaran PKAA Tahunan";
 $currentUser = currentUser();
 $userRole = $currentUser['role'] ?? 'OPERATOR';
+
+// Validasi otorisasi peran pengguna (Hanya ADMIN, KASIR, dan OPERATOR)
+$allowedRoles = ['ADMIN', 'KASIR', 'OPERATOR'];
+if (!in_array($userRole, $allowedRoles, true)) {
+    http_response_code(403);
+    die("Akses Terbatas: Peran Anda ($userRole) tidak memiliki izin untuk memproses transaksi pembayaran.");
+}
 
 // Tangkap input 3 kotak NOPD [xx] [xxxx] [xx] atau input gabungan
 $nopd1 = strtoupper(trim($_GET['nopd_1'] ?? ''));
@@ -96,28 +108,59 @@ if (!empty($selectedNopd) && !empty($box2)) {
         // Masa Pajak Akhir: 1 tahun dari masa awal baru
         $masaAkhirBaru = date('Y-m-d', strtotime('+1 year', strtotime($masaAwalBaru)));
 
-        // Notifikasi flash jika pajak masih aktif
+        // Notifikasi flash jika pajak masih aktif (sanitasi teks untuk mencegah XSS)
         if ($isPajakAktif && empty($_POST['aksi'])) {
-            setFlash('info', 'Status Pajak Masih Aktif!', "Pajak untuk kendaraan <strong>{$kapal['nama_kapal']} ($selectedNopd)</strong> MASIH AKTIF sampai dengan <strong>" . formatTanggalIndo($tglAkhirLama) . "</strong> (Tersisa <strong>$hariTersisa hari</strong> lagi).");
+            setFlash('info', 'Status Pajak Masih Aktif!', "Pajak untuk kendaraan <strong>" . htmlspecialchars($kapal['nama_kapal'], ENT_QUOTES, 'UTF-8') . " (" . htmlspecialchars($selectedNopd, ENT_QUOTES, 'UTF-8') . ")</strong> MASIH AKTIF sampai dengan <strong>" . formatTanggalIndo($tglAkhirLama) . "</strong> (Tersisa <strong>$hariTersisa hari</strong> lagi).");
         }
 
         // Hitung kewajiban pajak dengan kalkulasi resmi BPAD NTT (Pokok + Denda Keterlambatan jika ada + Opsen 66%)
         $perhitungan = kalkulasiPajakPKAA($pdo, $kapal['total_njkb'], $kapal['kode_fungsi'], $kapal['tg_akhir_pajak'], date('Y-m-d'));
     } else {
-        setFlash('warning', 'Objek Pajak Tidak Ditemukan', "Kendaraan dengan NOPD <strong>$selectedNopd</strong> belum terdaftar dalam basis data sistem JANGKAR NTT.");
+        setFlash('warning', 'Objek Pajak Tidak Ditemukan', "Kendaraan dengan NOPD <strong>" . htmlspecialchars($selectedNopd, ENT_QUOTES, 'UTF-8') . "</strong> belum terdaftar dalam basis data sistem JANGKAR NTT.");
     }
 }
 
 // PROSES 2: Simpan & Eksekusi Pembayaran PKAA Tahunan
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'proses_bayar_tahunan' && $kapal) {
-    $tglBayar = trim($_POST['tgl_bayar'] ?? date('Y-m-d'));
-    $masaAwalFix = trim($_POST['masa_pajak_awal'] ?? date('Y-m-d'));
-    $masaAkhirFix = trim($_POST['masa_pajak_akhir'] ?? date('Y-m-d', strtotime('+1 year')));
-    $metodeBayar = trim($_POST['metode_bayar'] ?? 'BANK NTT (Kasda)');
-    $noResi = trim($_POST['no_resi_bukti'] ?? '');
-    $pejabatId = (int)($_POST['pejabat_skpd_id'] ?? ($pejabatSkpdList[0]['id'] ?? 1));
+    // 1. Validasi Token Keamanan CSRF
+    if (!verifyCsrfToken()) {
+        setFlash('error', 'Validasi Keamanan Gagal (CSRF)', 'Sesi atau token keamanan Anda tidak valid / kedaluwarsa. Silakan muat ulang halaman.');
+        safeRedirect("index.php?page=pembayaran_tahunan&nopd=" . urlencode($selectedNopd));
+    }
 
-    // Nilai kalkulasi
+    // 2. Validasi Tanggal Pembayaran
+    $tglBayar = trim($_POST['tgl_bayar'] ?? date('Y-m-d'));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tglBayar) || strtotime($tglBayar) === false) {
+        $tglBayar = date('Y-m-d');
+    }
+
+    // 3. Validasi & Rekalkulasi Masa Pajak di Sisi Server (Anti Parameter Tampering)
+    $masaAwalInput = trim($_POST['masa_pajak_awal'] ?? $masaAwalBaru);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $masaAwalInput) || strtotime($masaAwalInput) === false) {
+        $masaAwalFix = $masaAwalBaru;
+    } else {
+        $masaAwalFix = $masaAwalInput;
+    }
+    // Masa akhir selalu dikunci tepat 1 tahun dari masa awal oleh backend sistem
+    $masaAkhirFix = date('Y-m-d', strtotime('+1 year', strtotime($masaAwalFix)));
+
+    // 4. Pencegahan Duplikasi Pembayaran / Replay
+    if (!empty($kapal['tg_akhir_pajak']) && $kapal['status_pajak'] === 'LUNAS' && strtotime($kapal['tg_akhir_pajak']) >= strtotime($masaAkhirFix)) {
+        setFlash('warning', 'Pajak Sudah Lunas', "Kendaraan <strong>" . htmlspecialchars($kapal['nama_kapal'], ENT_QUOTES, 'UTF-8') . "</strong> sudah berstatus LUNAS sampai dengan <strong>" . formatTanggalIndo($kapal['tg_akhir_pajak']) . "</strong>. Transaksi tidak diproses ulang.");
+        safeRedirect("index.php?page=pembayaran_tahunan&nopd=" . urlencode($selectedNopd));
+    }
+
+    // 5. Validasi Pejabat SKPD
+    $pejabatId = (int)($_POST['pejabat_skpd_id'] ?? 0);
+    $validPejabatIds = array_column($pejabatSkpdList, 'id');
+    if (!in_array($pejabatId, $validPejabatIds)) {
+        $pejabatId = $pejabatSkpdList[0]['id'] ?? 1;
+    }
+
+    $metodeBayar = trim(strip_tags($_POST['metode_bayar'] ?? 'BANK NTT (Kasda)'));
+    $noResi = trim(strip_tags($_POST['no_resi_bukti'] ?? ''));
+
+    // Nilai kalkulasi (dihitung langsung dari sistem fiskal resmi, bukan dari input POST)
     $njkbDasar = (float)$perhitungan['njkb_dasar'];
     $tarifPokok = (float)$perhitungan['tarif_pokok_persen'];
     $beaPokok = (float)$perhitungan['bea_pkaa_pokok'];
@@ -205,10 +248,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
         $kapal['tg_akhir_pajak'] = $masaAkhirFix;
         $kapal['status_pajak'] = 'LUNAS';
 
-        setFlash('success', 'Pembayaran PKAA Tahunan Berhasil!', "Pajak tahunan untuk kapal <strong>{$kapal['nama_kapal']} ($selectedNopd)</strong> berhasil dilunasi. Dokumen SKPD No. <strong>$noSkpd</strong> dan SUPERPKAA No. <strong>$noSuper</strong> telah diterbitkan.");
+        setFlash('success', 'Pembayaran PKAA Tahunan Berhasil!', "Pajak tahunan untuk kapal <strong>" . htmlspecialchars($kapal['nama_kapal'], ENT_QUOTES, 'UTF-8') . " (" . htmlspecialchars($selectedNopd, ENT_QUOTES, 'UTF-8') . ")</strong> berhasil dilunasi. Dokumen SKPD No. <strong>" . htmlspecialchars($noSkpd, ENT_QUOTES, 'UTF-8') . "</strong> dan SUPERPKAA No. <strong>" . htmlspecialchars($noSuper, ENT_QUOTES, 'UTF-8') . "</strong> telah diterbitkan.");
     } catch (Exception $e) {
         $pdo->rollBack();
-        setFlash('error', 'Gagal Memproses Pembayaran', 'Terjadi kesalahan sistem: ' . $e->getMessage());
+        error_log("Error pembayaran PKAA: " . $e->getMessage());
+        setFlash('error', 'Gagal Memproses Pembayaran', 'Terjadi kesalahan sistem saat memproses transaksi pembayaran. Silakan hubungi tim administrator.');
     }
 }
 ?>
@@ -427,6 +471,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
 
   <!-- Form Proses Pembayaran Tahunan -->
   <form method="POST" action="index.php?page=pembayaran_tahunan" id="formBayarTahunan">
+    <?= csrfField() ?>
     <input type="hidden" name="aksi" value="proses_bayar_tahunan">
     <input type="hidden" name="no_objek_pajak" value="<?= htmlspecialchars($kapal['no_objek_pajak']) ?>">
 
@@ -626,9 +671,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
                   Masa PKAA Sampai Dengan (s.d) <span class="required">*</span>
                 </label>
                 <input type="date" name="masa_pajak_akhir" id="masa_pajak_akhir" class="form-control" 
-                       value="<?= htmlspecialchars($masaAkhirBaru) ?>" required>
+                       value="<?= htmlspecialchars($masaAkhirBaru) ?>" readonly style="background-color: #f1f5f9; cursor: not-allowed;" required>
                 <span style="font-size: 11px; color: #64748b; margin-top: 3px; display: block;">
-                  Otomatis 1 tahun ke depan
+                  Ketetapan otomatis 1 tahun ke depan (dikunci oleh sistem)
                 </span>
               </div>
             </div>
@@ -750,7 +795,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
               <a href="index.php?page=pembayaran_tahunan" class="btn btn-secondary" style="padding: 10px 18px;">
                 Batal
               </a>
-              <button type="submit" class="btn btn-primary" style="background: #059669; border-color: #047857; padding: 10px 28px; font-weight: 800; font-size: 14px; box-shadow: 0 4px 10px rgba(5, 150, 105, 0.25);" onclick="return confirm('Apakah Anda yakin data pembayaran sudah benar dan ingin mengesahkan SKPD PKAA Tahunan ini?')">
+              <button type="submit" id="btnSubmitBayar" class="btn btn-primary" style="background: #059669; border-color: #047857; padding: 10px 28px; font-weight: 800; font-size: 14px; box-shadow: 0 4px 10px rgba(5, 150, 105, 0.25);">
                 <?= renderIcon('check-circle', '', 18) ?>
                 <span>PROSES & SAHKAN PEMBAYARAN TAHUNAN</span>
               </button>
@@ -897,6 +942,23 @@ document.addEventListener('DOMContentLoaded', function() {
   if (form) {
     form.addEventListener('submit', function() {
       updateHiddenNopd();
+    });
+  }
+
+  // Handler proteksi double submission pada form pembayaran
+  const formBayar = document.getElementById('formBayarTahunan');
+  if (formBayar) {
+    formBayar.addEventListener('submit', function(e) {
+      const confirmed = confirm('Apakah Anda yakin data pembayaran sudah benar dan ingin mengesahkan SKPD PKAA Tahunan ini?');
+      if (!confirmed) {
+        e.preventDefault();
+        return false;
+      }
+      const btn = document.getElementById('btnSubmitBayar');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>Sedang Memproses Pengesahan...</span>';
+      }
     });
   }
 });

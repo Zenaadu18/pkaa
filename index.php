@@ -2,6 +2,8 @@
 // index.php - Router Utama Aplikasi JANGKAR NTT
 ob_start();
 
+define('APP_INIT', true);
+
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/config/helpers.php';
 require_once __DIR__ . '/config/auth.php';
