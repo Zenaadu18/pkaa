@@ -1136,3 +1136,411 @@ textarea.form-control {
   user-select: all;
 }
 
+/* ==========================================================================
+   RESPONSIVE DESIGN SYSTEM & MOBILE OFF-CANVAS DRAWER
+   Kompatibel dengan Seluruh Ukuran Layar: Smartphone, Tablet, Laptop, & Desktop
+   ========================================================================== */
+
+/* Mobile Drawer Header & Close Button */
+.sidebar-mobile-header {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Responsive Grid Helper Classes */
+.responsive-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.responsive-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.responsive-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.responsive-split-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 14px;
+}
+
+/* ==========================================================================
+   TABLET & LAPTOP SCREEN BREAKPOINT (max-width: 992px)
+   ========================================================================== */
+@media (max-width: 992px) {
+  :root {
+    --header-height: 54px;
+  }
+
+  /* Shell Layout */
+  .app-body {
+    position: relative;
+    height: calc(100dvh - var(--header-height) - var(--footer-height));
+  }
+
+  /* Topbar Adjustments */
+  .topbar-clock {
+    display: none;
+  }
+
+  .topbar-titles p {
+    display: none;
+  }
+
+  .topbar-titles h1 {
+    font-size: 13.5px;
+  }
+
+  .btn-shortcut-hint {
+    display: none;
+  }
+
+  /* Mobile Off-Canvas Sidebar Drawer */
+  .desktop-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 84vw;
+    height: 100vh;
+    height: 100dvh;
+    background: #090d16;
+    z-index: 10005;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+    border-right: 1px solid #1e293b;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-wrapper.sidebar-mobile-open .desktop-sidebar {
+    transform: translateX(0);
+    box-shadow: 4px 0 30px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Reset desktop collapsed styling on mobile/tablet */
+  .app-wrapper.sidebar-collapsed .desktop-sidebar {
+    width: 280px !important;
+    min-width: 280px !important;
+    transform: translateX(-100%);
+  }
+
+  .app-wrapper.sidebar-collapsed.sidebar-mobile-open .desktop-sidebar {
+    transform: translateX(0) !important;
+  }
+
+  .app-wrapper.sidebar-collapsed .desktop-sidebar .nav-section-title,
+  .app-wrapper.sidebar-collapsed .desktop-sidebar .nav-item a span,
+  .app-wrapper.sidebar-collapsed .desktop-sidebar .nav-item .shortcut-tag {
+    display: inline-block !important;
+  }
+
+  .app-wrapper.sidebar-collapsed .desktop-sidebar .nav-item a {
+    justify-content: flex-start !important;
+    padding: 8px 12px !important;
+  }
+
+  .app-wrapper.sidebar-collapsed .desktop-sidebar .nav-item a:hover::after {
+    display: none !important;
+  }
+
+  /* Backdrop Overlay */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+
+  .app-wrapper.sidebar-mobile-open .sidebar-backdrop {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Drawer Header */
+  .sidebar-mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: #0f172a;
+    border-bottom: 2px solid var(--accent-gold);
+    margin-bottom: 8px;
+  }
+
+  .btn-sidebar-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 26px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    transition: color 0.15s ease;
+  }
+
+  .btn-sidebar-close:hover {
+    color: #ffffff;
+  }
+
+  /* Content Container */
+  .desktop-content {
+    width: 100%;
+    padding: 14px 12px;
+  }
+
+  /* Responsive Multi-Column Grids */
+  .responsive-split-grid,
+  div[style*="grid-template-columns: 1.5fr 1fr"],
+  div[style*="grid-template-columns: 340px 1fr"],
+  div[style*="grid-template-columns: 1fr 1.6fr"],
+  div[style*="grid-template-columns: 1fr 1.8fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Forms Filter Grid in Master & Reports */
+  form[style*="grid-template-columns"],
+  div[style*="grid-template-columns: 1.4fr 1fr 1fr 1.2fr"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* ==========================================================================
+   SMARTPHONE & SMALL SCREEN BREAKPOINT (max-width: 768px)
+   ========================================================================== */
+@media (max-width: 768px) {
+  :root {
+    --header-height: 54px;
+    --footer-height: 36px;
+  }
+
+  /* Topbar Mobile */
+  .desktop-topbar {
+    padding: 0 10px;
+  }
+
+  .topbar-brand {
+    gap: 8px;
+  }
+
+  .topbar-titles .badge-system {
+    display: none;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .topbar-actions .topbar-btn-text {
+    display: none;
+  }
+
+  .topbar-user {
+    padding: 2px;
+    background: transparent;
+    border: none;
+  }
+
+  .topbar-user .user-info {
+    display: none;
+  }
+
+  .user-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 11px;
+  }
+
+  /* Content & Page Header */
+  .desktop-content {
+    padding: 10px 8px;
+    gap: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 6px;
+  }
+
+  .page-header-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* Tabs Navigation */
+  .tabs-nav {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  .tabs-nav .btn {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  /* Responsive Grids to Single Column */
+  .form-grid-2,
+  .form-grid-3,
+  .responsive-grid-2,
+  .responsive-grid-3,
+  div[style*="grid-template-columns: 1fr 1fr"],
+  div[style*="grid-template-columns: 1.5fr 1fr 1.5fr"],
+  div[style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .responsive-grid-4,
+  div[style*="grid-template-columns: repeat(4, 1fr)"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Filter Forms to Single Column */
+  form[style*="grid-template-columns"],
+  div[style*="grid-template-columns: 1.4fr 1fr 1fr 1.2fr"] {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* Tables: Smooth Horizontal Touch Scrolling */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+
+  .table-desktop {
+    min-width: 580px;
+  }
+
+  /* Panels & Action Footers */
+  .panel-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .panel-header .btn {
+    margin-left: auto;
+  }
+
+  .panel-body {
+    padding: 12px 10px;
+  }
+
+  /* NOPD Box Input in Pembayaran Tahunan */
+  .nopd-box-container {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* Desktop Footer / Status Bar on Mobile */
+  .desktop-footer {
+    padding: 0 10px;
+    justify-content: center;
+    text-align: center;
+    font-size: 10.5px;
+  }
+
+  .footer-shortcuts {
+    display: none;
+  }
+
+  /* Modals on Mobile */
+  .modal-container {
+    width: 95% !important;
+    max-width: 95% !important;
+    margin: 8px auto !important;
+    max-height: 92vh !important;
+  }
+
+  .desktop-modal > div {
+    width: 95% !important;
+    max-width: 95% !important;
+    margin: 8px auto !important;
+    max-height: 92vh !important;
+  }
+
+  /* Floating Toast Container */
+  #toastContainer {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  /* Login Card on Small Devices */
+  .login-page {
+    padding: 16px;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .login-card {
+    width: 100% !important;
+    max-width: 440px !important;
+    margin: 0 auto !important;
+  }
+}
+
+/* ==========================================================================
+   EXTRA SMALL SCREENS (max-width: 480px)
+   ========================================================================== */
+@media (max-width: 480px) {
+  .topbar-titles h1 {
+    font-size: 11.5px;
+  }
+
+  .btn {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .responsive-grid-4,
+  div[style*="grid-template-columns: repeat(4, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .panel-title {
+    font-size: 12px;
+  }
+
+  .input-prefix, .input-suffix {
+    padding: 0 6px;
+    font-size: 10px;
+  }
+}
+
+

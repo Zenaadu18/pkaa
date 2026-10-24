@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="stylesheet" href="assets/css/desktop.css">
 </head>
 <body class="login-page">
-  <div class="login-card" style="width: 440px;">
+  <div class="login-card" style="width: 100%; max-width: 440px; margin: 16px;">
     <div class="login-header">
       <div style="margin-bottom: 10px;">
         <img src="assets/img/logontt.png" alt="Logo Pemprov NTT" style="height: 72px; width: auto; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));">

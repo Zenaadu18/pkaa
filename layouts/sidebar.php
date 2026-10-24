@@ -15,6 +15,18 @@ if ($userRole === 'ADMIN') {
 }
 ?>
 <aside class="desktop-sidebar">
+  <!-- Mobile Drawer Header -->
+  <div class="sidebar-mobile-header">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <img src="assets/img/logontt.png" alt="Logo NTT" style="height:26px; width:auto; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));">
+      <div>
+        <div style="color:#ffffff; font-size:12.5px; font-weight:800; letter-spacing:0.5px;">JANGKAR NTT</div>
+        <div style="color:#94a3b8; font-size:9.5px;">BPAD Prov. NTT</div>
+      </div>
+    </div>
+    <button type="button" class="btn-sidebar-close" onclick="toggleSidebar(false)" title="Tutup Menu">&times;</button>
+  </div>
+
   <!-- Section Dashboard -->
   <div class="nav-section-title">Menu Utama</div>
   <ul class="nav-menu">

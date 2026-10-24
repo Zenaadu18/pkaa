@@ -45,7 +45,7 @@ $currentUser = currentUser();
       <!-- Layar Bantu Shortcut Button -->
       <button type="button" class="btn btn-secondary btn-sm" onclick="bukaLayarBantu()" title="Pencarian Cepat Data Kapal (Ctrl+B)">
         <?= renderIcon('search', '', 14) ?>
-        <span>Layar Bantu</span>
+        <span class="topbar-btn-text">Layar Bantu</span>
         <span class="btn-shortcut-hint">Ctrl+B</span>
       </button>
 
@@ -63,12 +63,15 @@ $currentUser = currentUser();
       <!-- Logout -->
       <a href="index.php?page=logout" class="btn btn-danger btn-sm" title="Keluar dari Aplikasi" onclick="return confirm('Apakah Anda yakin ingin keluar dari sistem?')">
         <?= renderIcon('log-out', '', 14) ?>
-        <span>Keluar</span>
+        <span class="topbar-btn-text">Keluar</span>
       </a>
     </div>
   </header>
 
   <div class="app-body">
+    <!-- Sidebar Backdrop Overlay untuk Layar Mobile/Tablet -->
+    <div class="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
+
     <!-- Sidebar -->
     <?php require_once __DIR__ . '/sidebar.php'; ?>
     

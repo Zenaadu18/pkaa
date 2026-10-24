@@ -227,21 +227,55 @@ function closeToast(toastEl) {
 }
 
 /**
- * Sidebar Minimize / Expand Toggle
+ * Sidebar Minimize / Expand / Mobile Drawer Toggle
+ * forceState: optional boolean (true to open/collapse, false to close/expand)
  */
-function toggleSidebar() {
+function toggleSidebar(forceState) {
   var appWrapper = document.querySelector('.app-wrapper');
   if (!appWrapper) return;
   
-  var isCollapsed = appWrapper.classList.toggle('sidebar-collapsed');
-  localStorage.setItem('jangkar_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+  var isMobile = window.innerWidth <= 992;
+  
+  if (isMobile) {
+    if (typeof forceState === 'boolean') {
+      if (forceState) {
+        appWrapper.classList.add('sidebar-mobile-open');
+      } else {
+        appWrapper.classList.remove('sidebar-mobile-open');
+      }
+    } else {
+      appWrapper.classList.toggle('sidebar-mobile-open');
+    }
+  } else {
+    var isCollapsed;
+    if (typeof forceState === 'boolean') {
+      if (forceState) {
+        appWrapper.classList.add('sidebar-collapsed');
+        isCollapsed = true;
+      } else {
+        appWrapper.classList.remove('sidebar-collapsed');
+        isCollapsed = false;
+      }
+    } else {
+      isCollapsed = appWrapper.classList.toggle('sidebar-collapsed');
+    }
+    localStorage.setItem('jangkar_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+  }
 }
 
 function initSidebarState() {
-  var saved = localStorage.getItem('jangkar_sidebar_collapsed');
+  var isMobile = window.innerWidth <= 992;
   var appWrapper = document.querySelector('.app-wrapper');
-  if (saved === 'true' && appWrapper) {
-    appWrapper.classList.add('sidebar-collapsed');
+  if (!appWrapper) return;
+
+  if (!isMobile) {
+    var saved = localStorage.getItem('jangkar_sidebar_collapsed');
+    if (saved === 'true') {
+      appWrapper.classList.add('sidebar-collapsed');
+    }
+  } else {
+    appWrapper.classList.remove('sidebar-collapsed');
+    appWrapper.classList.remove('sidebar-mobile-open');
   }
 }
 
@@ -250,4 +284,24 @@ document.addEventListener('DOMContentLoaded', function() {
   initClock();
   initEngineRows();
   initSidebarState();
+
+  // Tutup sidebar mobile saat mengklik link menu
+  var navLinks = document.querySelectorAll('.desktop-sidebar .nav-item a');
+  navLinks.forEach(function(link) {
+    link.addEventListener('click', function() {
+      if (window.innerWidth <= 992) {
+        toggleSidebar(false);
+      }
+    });
+  });
+
+  // Reset drawer state jika window diperbesar ke desktop
+  window.addEventListener('resize', function() {
+    if (window.innerWidth > 992) {
+      var appWrapper = document.querySelector('.app-wrapper');
+      if (appWrapper) {
+        appWrapper.classList.remove('sidebar-mobile-open');
+      }
+    }
+  });
 });
